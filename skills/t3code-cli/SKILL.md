@@ -74,6 +74,19 @@ t3cli start "task" --format json --wait
 t3cli start "task" --format ndjson --wait   # stream events
 ```
 
+**Ask once**
+
+Use `ask` when only the final answer is needed. It creates and archives a temporary thread by
+default, or sends to an explicit existing thread without archiving it:
+
+```sh
+t3cli ask "question" --project <project-ref>
+t3cli ask "follow-up" --thread <thread-id>
+```
+
+`ask` ignores `T3CODE_THREAD_ID`; pass `--thread` intentionally. Plain output is answer text only.
+Use `--format json` for a result object or `--format ndjson` for streamed events.
+
 **Follow-up**
 
 ```sh

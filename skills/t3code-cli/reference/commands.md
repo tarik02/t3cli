@@ -98,6 +98,14 @@ Mutations dispatch `project.meta.update` with the next full scripts array and wa
 t3cli list [--project <ref>] [--archived | --all] [--format json]
 t3cli search <query> [--limit <1-50>] [--format auto|human|json]
 
+t3cli ask [message]
+  [--project <ref>] [--thread <id>] [--force|-f] [--stdin]
+  [--title <title>] [--worktree <path>] [--provider <name>] [--model <id>]
+  [--option key=value] [--reasoning-effort <v>] [--effort <v>] [--fast-mode] [--thinking]
+  [--archive never|always|on-success|on-failure]
+  [--busy fail|queue|steer] [--timeout <duration>]
+  [--format auto|human|json|ndjson]
+
 t3cli start [message]
   [--project <ref>] [--stdin] [--title <title>] [--worktree <path>]
   [--provider <name>] [--model <id>]
@@ -114,6 +122,25 @@ t3cli transcript [--thread <id>] [--limit N]
   [--full] [--format auto|human|json]
 t3cli wait [--thread <id>] [--format auto|human|ndjson]
 ```
+
+`ask` always waits for the turn it starts. Without `--thread`, it creates a thread and defaults to
+`--archive on-success`. With an explicit `--thread`, it defaults to `--archive never`. An explicit
+archive policy applies to either target. Archive failures produce a warning and remain visible in
+structured output without changing a successful exit status.
+
+`--busy fail` is the default for an active existing thread. `queue` waits for the active turn,
+while `steer` dispatches immediately. Busy checks are best effort because the server does not offer
+an atomic busy-policy condition. Existing archived threads and threads with pending approval or
+user-input requests are rejected.
+
+`--timeout` accepts positive durations such as `30s`, `5m`, and `1h`; omitting it waits without a
+limit. A timeout or local interruption stops a turn started by `ask` when ownership can be
+confirmed, then applies the failure archive policy. Time spent waiting under `--busy queue` counts
+toward the timeout, but a timeout before dispatch does not mutate the existing turn.
+
+`--title`, `--worktree`, `--provider`, and `--model` apply only when creating a thread and are
+rejected with `--thread`. Model option flags apply to both modes. `ask` never reads
+`T3CODE_THREAD_ID`; selecting an existing thread requires `--thread`.
 
 `transcript` loads the latest 10 user turns by default. Older-page requests default to 20 turns.
 JSON output includes `page.beforeCursor` and `page.hasMore`; pass the cursor to `--before-cursor` to
@@ -185,6 +212,7 @@ t3cli thread callback --from <thread-id> --prompt <message> [--thread <id>] [--b
 | Commands        | `--format`                    | Agent default                   |
 | --------------- | ----------------------------- | ------------------------------- |
 | Most            | `auto` \| `human` \| `json`   | `json`                          |
+| `ask`           | + `ndjson`                    | `human`                         |
 | `start`, `send` | + `ndjson`                    | `json` / `ndjson` with `--wait` |
 | `wait`          | `auto` \| `human` \| `ndjson` | `ndjson`                        |
 
@@ -201,6 +229,10 @@ One JSON object per line:
 { "type": "status", "status": "running", "threadId": "..." }
 { "type": "done", "thread": {}, "latestAssistantMessage": {} }
 ```
+
+Successful `ask --format ndjson` streams the same thread events and ends with a `result` object.
+`ask --format json` returns one object with `answer`, `threadId`, `turnId`, `created`, `dispatch`,
+and `archive`. Human output writes progress to stderr and only the final answer to stdout.
 
 ## Examples
 

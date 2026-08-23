@@ -1,6 +1,7 @@
 import { Command } from "effect/unstable/cli";
 
 import { createActionCommand } from "./action.ts";
+import { askCommand } from "./ask.ts";
 import { createAuthCommand } from "./auth.ts";
 import { createEnvCommand } from "./env.ts";
 import { cliEnvironmentSetting } from "./env/flag.ts";
@@ -22,6 +23,7 @@ export function createCliCommand() {
     Command.withGlobalFlags([cliEnvironmentSetting]),
     Command.withSubcommands([
       createActionCommand(),
+      askCommand,
       createAuthCommand(),
       createEnvCommand(),
       listThreadsCommand,

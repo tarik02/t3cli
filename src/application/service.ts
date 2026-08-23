@@ -227,6 +227,9 @@ export type T3ThreadApplicationService = {
   readonly getThreadMessages: (
     input: GetThreadMessagesInput,
   ) => Effect.Effect<OrchestrationThreadDetailSnapshot, ApplicationError>;
+  readonly getThreadSummary: (
+    threadId: string,
+  ) => Effect.Effect<OrchestrationThreadShell, ApplicationError>;
   readonly showThread: (threadId: string) => Effect.Effect<ThreadShow, ApplicationError>;
   readonly approveThread: (input: {
     readonly threadId: string;

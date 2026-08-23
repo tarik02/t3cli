@@ -117,6 +117,23 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
   ) {
     return yield* orchestration.getThreadDetailSnapshot(input);
   });
+  const getThreadSummary = Effect.fn("T3ApplicationLive.getThreadSummary")(function* (
+    threadId: string,
+  ) {
+    const snapshot = yield* loadThreadsSnapshot("all").pipe(
+      Effect.provideService(T3Orchestration, orchestration),
+    );
+    const thread = snapshot.threads.find((item) => item.id === threadId);
+    if (thread === undefined) {
+      return yield* Effect.fail(
+        new ThreadLookupError({
+          message: `thread not found: ${threadId}`,
+          threadId,
+        }),
+      );
+    }
+    return thread;
+  });
   const showThread = Effect.fn("T3ApplicationLive.showThread")(function* (threadId: string) {
     const thread = yield* orchestration.getThreadSnapshot(threadId);
     return projectThreadShow(thread);
@@ -125,7 +142,9 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     const command = yield* makeThreadArchiveCommand(threadId).pipe(
       Effect.provideService(Crypto.Crypto, crypto),
     );
-    return yield* orchestration.dispatch(command);
+    const dispatch = yield* orchestration.dispatch(command);
+    yield* awaitShellSequence(dispatch.sequence);
+    return dispatch;
   });
   const unarchiveThread = Effect.fn("T3ApplicationLive.unarchiveThread")(function* (
     threadId: string,
@@ -365,6 +384,7 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     listThreads,
     searchThreads,
     getThreadMessages,
+    getThreadSummary,
     respondToThread,
     sendThread,
     showThread,
