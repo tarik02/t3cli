@@ -16,6 +16,7 @@ import {
   ensureAskTargetAvailable,
   ensureTrailingNewline,
   finalizeArchive,
+  inspectAskTurn,
   resolveAskFormat,
   selectAskAnswer,
   waitForAskThread,
@@ -303,16 +304,17 @@ export const askCommand = Command.make(
         });
 
         const finalSnapshot = yield* application.getThreadMessages({ threadId });
-        const answer = selectAskAnswer(finalSnapshot.thread, askMessageId, state.askTurnId);
+        const observation = inspectAskTurn(finalSnapshot.thread, askMessageId, state.askTurnId);
+        if (observation.status === "failed") {
+          return yield* Effect.fail(
+            new ThreadSessionError({
+              threadId,
+              message: observation.message,
+            }),
+          );
+        }
+        const answer = selectAskAnswer(finalSnapshot.thread, askMessageId, observation.turnId);
         if (answer === undefined) {
-          if (finalSnapshot.thread.session?.status === "error") {
-            return yield* Effect.fail(
-              new ThreadSessionError({
-                threadId,
-                message: finalSnapshot.thread.session.lastError ?? "thread ended with error",
-              }),
-            );
-          }
           return yield* Effect.fail(
             new AskNoAnswerError({
               message: `thread completed without a new final answer: ${threadId}`,
