@@ -6,7 +6,7 @@
     nixpkgs-darwin.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
 
     upstream-t3code = {
-      url = "github:pingdotgg/t3code/3b72d17cbca691f0b64e6d4a10c9e349f42873a5";
+      url = "github:pingdotgg/t3code/f0ebc628c6dd83fd0c7963078ad7778ce6028d0c";
       flake = false;
     };
   };

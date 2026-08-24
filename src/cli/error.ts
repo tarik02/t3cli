@@ -39,6 +39,60 @@ export class InvalidFlagCombinationError extends Schema.TaggedErrorClass<Invalid
   },
 ) {}
 
+export class InvalidAskTimeoutError extends Schema.TaggedErrorClass<InvalidAskTimeoutError>()(
+  "InvalidAskTimeoutError",
+  {
+    message: Schema.String,
+    value: Schema.String,
+  },
+) {}
+
+export class AskThreadArchivedError extends Schema.TaggedErrorClass<AskThreadArchivedError>()(
+  "AskThreadArchivedError",
+  {
+    message: Schema.String,
+    threadId: Schema.String,
+  },
+) {}
+
+export class AskThreadBusyError extends Schema.TaggedErrorClass<AskThreadBusyError>()(
+  "AskThreadBusyError",
+  {
+    message: Schema.String,
+    threadId: Schema.String,
+  },
+) {}
+
+export class AskThreadPendingRequestError extends Schema.TaggedErrorClass<AskThreadPendingRequestError>()(
+  "AskThreadPendingRequestError",
+  {
+    message: Schema.String,
+    threadId: Schema.String,
+  },
+) {}
+
+export class AskProjectMismatchError extends Schema.TaggedErrorClass<AskProjectMismatchError>()(
+  "AskProjectMismatchError",
+  {
+    message: Schema.String,
+    threadId: Schema.String,
+    projectId: Schema.String,
+  },
+) {}
+
+export class AskNoAnswerError extends Schema.TaggedErrorClass<AskNoAnswerError>()(
+  "AskNoAnswerError",
+  {
+    message: Schema.String,
+    threadId: Schema.String,
+  },
+) {}
+
+export class AskTimeoutError extends Schema.TaggedErrorClass<AskTimeoutError>()("AskTimeoutError", {
+  message: Schema.String,
+  timeout: Schema.String,
+}) {}
+
 export class MissingRequestError extends Schema.TaggedErrorClass<MissingRequestError>()(
   "MissingRequestError",
   {

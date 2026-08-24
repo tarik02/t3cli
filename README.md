@@ -177,6 +177,22 @@ Lists available provider models. Use `--all` to include hidden or unavailable en
 
 ## Thread Workflow
 
+### Asking One Question
+
+`ask` waits for one answer and prints only the assistant text by default:
+
+```sh
+t3cli ask "Which package owns this API?" --project /path/to/project
+t3cli ask "Summarize the decision" --thread <id>
+```
+
+Without `--thread`, it creates a thread and archives it after a successful answer. With
+`--thread`, it leaves the existing thread active unless `--archive` is set explicitly.
+`--archive` accepts `never`, `always`, `on-success`, or `on-failure`.
+
+Existing busy threads are rejected. `--timeout 5m` limits the response wait. Unlike other
+thread-scoped commands, `ask` uses only an explicit `--thread` and ignores `T3CODE_THREAD_ID`.
+
 ### Starting Threads
 
 ```sh
@@ -304,6 +320,7 @@ Most commands support:
 Thread commands also support `ndjson` for streaming:
 
 ```sh
+t3cli ask "task" --format ndjson
 t3cli start "task" --format ndjson --wait
 t3cli wait --format ndjson
 ```

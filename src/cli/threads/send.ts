@@ -118,7 +118,11 @@ export const sendThreadCommand = Command.make(
 
       const result = yield* application.sendThread(input, { until: "visible" });
       if (resolvedFormat === "json") {
-        return yield* output.printJson(result);
+        return yield* output.printJson({
+          dispatch: result.dispatch,
+          threadId: result.threadId,
+          thread: result.thread,
+        });
       }
       return yield* output.printInfo(`message sent: ${result.threadId}`);
     }),

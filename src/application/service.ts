@@ -86,9 +86,13 @@ export type UpdateThreadInput = {
   readonly worktreePath?: string | null;
 };
 
-export type StartThreadPolicy = {
+export interface ThreadDispatchPolicy {
   readonly until: "dispatch" | "visible" | "complete";
-};
+}
+
+export interface StartThreadPolicy extends ThreadDispatchPolicy {
+  readonly onThreadCreated?: (threadId: string) => Effect.Effect<void>;
+}
 
 export type WaitEvent =
   | { readonly type: "thread"; readonly thread: OrchestrationThread }
@@ -209,6 +213,7 @@ export class T3ProjectApplication extends Context.Service<
 >()("t3cli/T3ProjectApplication") {}
 
 export type T3ThreadApplicationService = {
+  readonly awaitShellSequence: (sequence: number) => Effect.Effect<void, ApplicationError>;
   readonly searchThreads: (
     input: OrchestrationSearchThreadsInput,
   ) => Effect.Effect<ReadonlyArray<ThreadSearchResult>, ApplicationError>;
@@ -227,6 +232,9 @@ export type T3ThreadApplicationService = {
   readonly getThreadMessages: (
     input: GetThreadMessagesInput,
   ) => Effect.Effect<OrchestrationThreadDetailSnapshot, ApplicationError>;
+  readonly getThreadSummary: (
+    threadId: string,
+  ) => Effect.Effect<OrchestrationThreadShell, ApplicationError>;
   readonly showThread: (threadId: string) => Effect.Effect<ThreadShow, ApplicationError>;
   readonly approveThread: (input: {
     readonly threadId: string;
@@ -246,6 +254,10 @@ export type T3ThreadApplicationService = {
   >;
   readonly archiveThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
   readonly interruptThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
+  readonly interruptThreadTurn: (
+    threadId: string,
+    turnId: string,
+  ) => Effect.Effect<DispatchResult | undefined, ApplicationError>;
   readonly pinThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
   readonly settleThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
   readonly snoozeThread: (
@@ -270,6 +282,7 @@ export type T3ThreadApplicationService = {
   ) => Effect.Effect<
     {
       readonly dispatch: DispatchResult;
+      readonly messageId: string;
       readonly project: OrchestrationProjectShell;
       readonly threadId: string;
       readonly thread?: OrchestrationThread;
@@ -278,10 +291,11 @@ export type T3ThreadApplicationService = {
   >;
   readonly sendThread: (
     input: SendThreadInput,
-    policy?: StartThreadPolicy,
+    policy?: ThreadDispatchPolicy,
   ) => Effect.Effect<
     {
       readonly dispatch: DispatchResult;
+      readonly messageId: string;
       readonly threadId: string;
       readonly thread?: OrchestrationThread;
     },

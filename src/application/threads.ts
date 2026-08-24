@@ -11,6 +11,8 @@ import {
   type ListThreadsInclude,
   type SnoozeThreadInput,
   type StartThreadInput,
+  type StartThreadPolicy,
+  type ThreadDispatchPolicy,
 } from "./service.ts";
 import type { CallbackThreadInput, SendThreadInput } from "./service.ts";
 import type { T3ThreadApplicationService } from "./service.ts";
@@ -117,6 +119,23 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
   ) {
     return yield* orchestration.getThreadDetailSnapshot(input);
   });
+  const getThreadSummary = Effect.fn("T3ApplicationLive.getThreadSummary")(function* (
+    threadId: string,
+  ) {
+    const snapshot = yield* loadThreadsSnapshot("all").pipe(
+      Effect.provideService(T3Orchestration, orchestration),
+    );
+    const thread = snapshot.threads.find((item) => item.id === threadId);
+    if (thread === undefined) {
+      return yield* Effect.fail(
+        new ThreadLookupError({
+          message: `thread not found: ${threadId}`,
+          threadId,
+        }),
+      );
+    }
+    return thread;
+  });
   const showThread = Effect.fn("T3ApplicationLive.showThread")(function* (threadId: string) {
     const thread = yield* orchestration.getThreadSnapshot(threadId);
     return projectThreadShow(thread);
@@ -125,7 +144,9 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     const command = yield* makeThreadArchiveCommand(threadId).pipe(
       Effect.provideService(Crypto.Crypto, crypto),
     );
-    return yield* orchestration.dispatch(command);
+    const dispatch = yield* orchestration.dispatch(command);
+    yield* awaitShellSequence(dispatch.sequence);
+    return dispatch;
   });
   const unarchiveThread = Effect.fn("T3ApplicationLive.unarchiveThread")(function* (
     threadId: string,
@@ -188,6 +209,19 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     }).pipe(Effect.provideService(Crypto.Crypto, crypto));
     return yield* orchestration.dispatch(command);
   });
+  const interruptThreadTurn = Effect.fn("T3ApplicationLive.interruptThreadTurn")(function* (
+    threadId: string,
+    turnId: string,
+  ) {
+    const snapshot = yield* orchestration.getThreadSnapshot(threadId);
+    if (snapshot.session?.activeTurnId !== turnId) {
+      return undefined;
+    }
+    const command = yield* makeThreadInterruptCommand({ threadId, turnId }).pipe(
+      Effect.provideService(Crypto.Crypto, crypto),
+    );
+    return yield* orchestration.dispatch(command);
+  });
   const deleteThread = Effect.fn("T3ApplicationLive.deleteThread")(function* (threadId: string) {
     const snapshot = yield* loadThreadsSnapshot("all").pipe(
       Effect.provideService(T3Orchestration, orchestration),
@@ -220,9 +254,7 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     );
   const startThread = Effect.fn("T3ApplicationLive.startThread")(function* (
     startInput: StartThreadInput,
-    policy?: {
-      readonly until: "dispatch" | "visible" | "complete";
-    },
+    policy?: StartThreadPolicy,
   ) {
     const snapshot = yield* orchestration.getShellSnapshot();
     const projectRef = startInput.projectRef;
@@ -252,13 +284,17 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
       project: scope.project,
       serverConfig,
     }).pipe(Effect.provideService(Crypto.Crypto, crypto));
+    const threadId = commands.threadId;
     const createDispatch = yield* orchestration.dispatch(commands.createCommand);
+    if (policy?.onThreadCreated !== undefined) {
+      yield* policy.onThreadCreated(threadId);
+    }
     yield* awaitShellSequence(createDispatch.sequence);
     const dispatch = yield* orchestration.dispatch(commands.turnCommand);
-    const threadId = commands.threadId;
+    const messageId = commands.turnCommand.message.messageId;
     const until = policy?.until ?? "dispatch";
     if (until === "dispatch") {
-      return { dispatch, project: scope.project, threadId };
+      return { dispatch, messageId, project: scope.project, threadId };
     }
     yield* awaitShellSequence(dispatch.sequence);
     if (until === "visible") {
@@ -268,17 +304,15 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
           return opened.snapshot;
         }),
       );
-      return { dispatch, project: scope.project, threadId, thread };
+      return { dispatch, messageId, project: scope.project, threadId, thread };
     }
     const thread = yield* awaitThreadCompletion(threadId);
     yield* failIfThreadError(thread);
-    return { dispatch, project: scope.project, threadId, thread };
+    return { dispatch, messageId, project: scope.project, threadId, thread };
   });
   const sendThread = Effect.fn("T3ApplicationLive.sendThread")(function* (
     input: SendThreadInput,
-    policy?: {
-      readonly until: "dispatch" | "visible" | "complete";
-    },
+    policy?: ThreadDispatchPolicy,
   ) {
     const modelSelection =
       input.options !== undefined && input.options.length > 0
@@ -292,9 +326,10 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
       ...(modelSelection !== undefined ? { modelSelection } : {}),
     }).pipe(Effect.provideService(Crypto.Crypto, crypto));
     const dispatch = yield* orchestration.dispatch(command);
+    const messageId = command.message.messageId;
     const until = policy?.until ?? "dispatch";
     if (until === "dispatch") {
-      return { dispatch, threadId: input.threadId };
+      return { dispatch, messageId, threadId: input.threadId };
     }
     yield* awaitShellSequence(dispatch.sequence);
     if (until === "visible") {
@@ -304,11 +339,11 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
           return opened.snapshot;
         }),
       );
-      return { dispatch, threadId: input.threadId, thread };
+      return { dispatch, messageId, threadId: input.threadId, thread };
     }
     const thread = yield* awaitThreadCompletion(input.threadId);
     yield* failIfThreadError(thread);
-    return { dispatch, threadId: input.threadId, thread };
+    return { dispatch, messageId, threadId: input.threadId, thread };
   });
   const watchThread = (threadId: string) => streamThreadEvents(threadId);
   const waitForThread = Effect.fn("T3ApplicationLive.waitForThread")(function* (threadId: string) {
@@ -352,8 +387,10 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
   return {
     approveThread,
     archiveThread,
+    awaitShellSequence,
     deleteThread,
     interruptThread,
+    interruptThreadTurn,
     pinThread,
     settleThread,
     snoozeThread,
@@ -365,6 +402,7 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     listThreads,
     searchThreads,
     getThreadMessages,
+    getThreadSummary,
     respondToThread,
     sendThread,
     showThread,
