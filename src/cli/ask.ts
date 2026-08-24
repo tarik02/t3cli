@@ -302,16 +302,16 @@ export const askCommand = Command.make(
         });
 
         const finalSnapshot = yield* application.getThreadMessages({ threadId });
-        if (finalSnapshot.thread.session?.status === "error") {
-          return yield* Effect.fail(
-            new ThreadSessionError({
-              threadId,
-              message: finalSnapshot.thread.session.lastError ?? "thread ended with error",
-            }),
-          );
-        }
         const answer = selectAskAnswer(finalSnapshot.thread, askMessageId, state.askTurnId);
         if (answer === undefined) {
+          if (finalSnapshot.thread.session?.status === "error") {
+            return yield* Effect.fail(
+              new ThreadSessionError({
+                threadId,
+                message: finalSnapshot.thread.session.lastError ?? "thread ended with error",
+              }),
+            );
+          }
           return yield* Effect.fail(
             new AskNoAnswerError({
               message: `thread completed without a new final answer: ${threadId}`,
