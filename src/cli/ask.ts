@@ -172,11 +172,9 @@ export const askCommand = Command.make(
         thinking,
       });
       const state: AskExecutionState = {
-        created,
         archivePolicy,
         threadId: explicitThreadId,
         dispatched: false,
-        baselineActiveTurnId: null,
         askTurnId: null,
         archiveResult: undefined,
       };
@@ -258,7 +256,6 @@ export const askCommand = Command.make(
             }
           }
 
-          state.baselineActiveTurnId = summary.session?.activeTurnId ?? null;
           const result = yield* application.sendThread(
             {
               threadId: explicitThreadId,
@@ -286,14 +283,6 @@ export const askCommand = Command.make(
           yield* output.printNdjson({ type: "dispatch", sequence: dispatch.sequence });
         }
         yield* application.awaitShellSequence(dispatch.sequence);
-        const visibleSummary = yield* application.getThreadSummary(threadId);
-        const visibleActiveTurnId = visibleSummary.session?.activeTurnId ?? null;
-        if (
-          visibleActiveTurnId !== null &&
-          (state.created || visibleActiveTurnId !== state.baselineActiveTurnId)
-        ) {
-          state.askTurnId = visibleActiveTurnId;
-        }
         yield* waitForAskThread(application, output, {
           threadId,
           format: resolvedFormat,

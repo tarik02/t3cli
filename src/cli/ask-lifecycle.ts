@@ -38,11 +38,9 @@ export type AskArchiveResult =
     };
 
 export interface AskExecutionState {
-  readonly created: boolean;
   readonly archivePolicy: ArchivePolicy;
   threadId: string | undefined;
   dispatched: boolean;
-  baselineActiveTurnId: string | null;
   askTurnId: string | null;
   archiveResult: AskArchiveResult | undefined;
 }
@@ -111,6 +109,7 @@ export function waitForAskThread(
 ) {
   let lastStatus = "";
   let askWindowOpen = false;
+  let answerFound = false;
   return Effect.gen(function* () {
     if (input.format === "human") {
       yield* output.writeStderr(`waiting for ${input.threadId}...\n`);
@@ -122,6 +121,13 @@ export function waitForAskThread(
             yield* ensureNoPendingRequest(application, input.threadId);
           }
           if (event.type === "thread") {
+            const answer = selectAskAnswer(event.thread, input.messageId, input.state.askTurnId);
+            if (answer !== undefined) {
+              if (answer.turnId !== null) {
+                input.state.askTurnId = answer.turnId;
+              }
+              answerFound = true;
+            }
             const userIndex = event.thread.messages.findIndex(
               (message) => message.id === input.messageId && message.role === "user",
             );
@@ -148,7 +154,19 @@ export function waitForAskThread(
               event.message.role === "assistant" &&
               event.message.turnId !== null
             ) {
-              input.state.askTurnId = event.message.turnId;
+              if (
+                input.state.askTurnId === null ||
+                input.state.askTurnId === event.message.turnId
+              ) {
+                input.state.askTurnId = event.message.turnId;
+                answerFound = !event.message.streaming && event.message.text.trim().length > 0;
+              }
+            } else if (
+              askWindowOpen &&
+              event.message.role === "assistant" &&
+              input.state.askTurnId === null
+            ) {
+              answerFound = !event.message.streaming && event.message.text.trim().length > 0;
             }
           }
           if (input.format === "ndjson") {
@@ -161,10 +179,11 @@ export function waitForAskThread(
           }
         }),
       ),
+      Stream.takeUntil((event) => answerFound || event.type === "done"),
       Stream.runLast,
     );
     const event = Option.getOrUndefined(last);
-    if (event?.type !== "done") {
+    if (!answerFound && event?.type !== "done") {
       return yield* Effect.fail(
         new ThreadSessionError({
           message: `thread wait ended without a terminal event: ${input.threadId}`,
@@ -172,7 +191,7 @@ export function waitForAskThread(
         }),
       );
     }
-    return event.thread;
+    return yield* Effect.void;
   });
 }
 
