@@ -250,6 +250,10 @@ export type T3ThreadApplicationService = {
   >;
   readonly archiveThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
   readonly interruptThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
+  readonly interruptThreadTurn: (
+    threadId: string,
+    turnId: string,
+  ) => Effect.Effect<DispatchResult | undefined, ApplicationError>;
   readonly pinThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
   readonly settleThread: (threadId: string) => Effect.Effect<DispatchResult, ApplicationError>;
   readonly snoozeThread: (

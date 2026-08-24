@@ -207,6 +207,19 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     }).pipe(Effect.provideService(Crypto.Crypto, crypto));
     return yield* orchestration.dispatch(command);
   });
+  const interruptThreadTurn = Effect.fn("T3ApplicationLive.interruptThreadTurn")(function* (
+    threadId: string,
+    turnId: string,
+  ) {
+    const snapshot = yield* orchestration.getThreadSnapshot(threadId);
+    if (snapshot.session?.activeTurnId !== turnId) {
+      return undefined;
+    }
+    const command = yield* makeThreadInterruptCommand({ threadId, turnId }).pipe(
+      Effect.provideService(Crypto.Crypto, crypto),
+    );
+    return yield* orchestration.dispatch(command);
+  });
   const deleteThread = Effect.fn("T3ApplicationLive.deleteThread")(function* (threadId: string) {
     const snapshot = yield* loadThreadsSnapshot("all").pipe(
       Effect.provideService(T3Orchestration, orchestration),
@@ -374,6 +387,7 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     awaitShellSequence,
     deleteThread,
     interruptThread,
+    interruptThreadTurn,
     pinThread,
     settleThread,
     snoozeThread,

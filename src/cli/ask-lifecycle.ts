@@ -43,6 +43,7 @@ export interface AskExecutionState {
   threadId: string | undefined;
   dispatched: boolean;
   baselineActiveTurnId: string | null;
+  askTurnId: string | null;
   archiveResult: AskArchiveResult | undefined;
 }
 
@@ -234,23 +235,8 @@ export function cleanupInterruptedAsk(
   }
   const threadId = state.threadId;
   return Effect.gen(function* () {
-    let shouldInterrupt = state.created || state.baselineActiveTurnId === null;
-    if (!state.created && state.baselineActiveTurnId !== null) {
-      shouldInterrupt = yield* application.showThread(threadId).pipe(
-        Effect.matchEffect({
-          onFailure: (error) =>
-            output
-              .writeStderr(
-                `warning: could not inspect thread ${threadId} during cancellation: ${error.message}\n`,
-              )
-              .pipe(Effect.ignore, Effect.as(false)),
-          onSuccess: (thread) =>
-            Effect.succeed(thread.session?.activeTurnId !== state.baselineActiveTurnId),
-        }),
-      );
-    }
-    if (shouldInterrupt) {
-      yield* application.interruptThread(threadId).pipe(
+    if (state.askTurnId !== null) {
+      yield* application.interruptThreadTurn(threadId, state.askTurnId).pipe(
         Effect.matchEffect({
           onFailure: (error) =>
             output
