@@ -237,7 +237,9 @@ export const askCommand = Command.make(
             action: "ask",
           });
 
-          if (isThreadActive(summary)) {
+          let targetThread = (yield* application.getThreadMessages({ threadId: explicitThreadId }))
+            .thread;
+          if (isThreadActive(targetThread)) {
             if (busyPolicy === "fail") {
               return yield* Effect.fail(
                 new AskThreadBusyError({
@@ -248,10 +250,13 @@ export const askCommand = Command.make(
             }
             if (busyPolicy === "queue") {
               yield* announceQueue(output, resolvedFormat, explicitThreadId);
-              while (isThreadActive(summary)) {
+              while (isThreadActive(targetThread)) {
                 yield* waitForBusyThread(application, explicitThreadId);
                 summary = yield* application.getThreadSummary(explicitThreadId);
                 yield* ensureAskTargetAvailable(summary);
+                targetThread = (yield* application.getThreadMessages({
+                  threadId: explicitThreadId,
+                })).thread;
               }
             }
           }
