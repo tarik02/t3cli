@@ -284,6 +284,7 @@ export const askCommand = Command.make(
         if (resolvedFormat === "ndjson") {
           yield* output.printNdjson({ type: "dispatch", sequence: dispatch.sequence });
         }
+        yield* application.awaitShellSequence(dispatch.sequence);
         yield* waitForAskThread(application, output, {
           threadId,
           format: resolvedFormat,

@@ -371,6 +371,7 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
   return {
     approveThread,
     archiveThread,
+    awaitShellSequence,
     deleteThread,
     interruptThread,
     pinThread,

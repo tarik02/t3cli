@@ -209,6 +209,7 @@ export class T3ProjectApplication extends Context.Service<
 >()("t3cli/T3ProjectApplication") {}
 
 export type T3ThreadApplicationService = {
+  readonly awaitShellSequence: (sequence: number) => Effect.Effect<void, ApplicationError>;
   readonly searchThreads: (
     input: OrchestrationSearchThreadsInput,
   ) => Effect.Effect<ReadonlyArray<ThreadSearchResult>, ApplicationError>;
