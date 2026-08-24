@@ -110,6 +110,7 @@ export function waitForAskThread(
   let lastStatus = "";
   let askWindowOpen = false;
   let answerFound = false;
+  let turnComplete = false;
   return Effect.gen(function* () {
     if (input.format === "human") {
       yield* output.writeStderr(`waiting for ${input.threadId}...\n`);
@@ -118,7 +119,26 @@ export function waitForAskThread(
       Stream.tap((event) =>
         Effect.gen(function* () {
           if (event.type === "status") {
-            yield* ensureNoPendingRequest(application, input.threadId);
+            const thread = yield* ensureNoPendingRequest(application, input.threadId);
+            if (
+              thread.session?.status === "error" &&
+              input.state.askTurnId !== null &&
+              thread.latestTurn?.turnId === input.state.askTurnId
+            ) {
+              yield* Effect.fail(
+                new ThreadSessionError({
+                  threadId: input.threadId,
+                  message: thread.session.lastError ?? "thread ended with error",
+                }),
+              );
+            }
+            if (
+              answerFound &&
+              input.state.askTurnId !== null &&
+              thread.session?.activeTurnId !== input.state.askTurnId
+            ) {
+              turnComplete = true;
+            }
           }
           if (event.type === "thread") {
             const answer = selectAskAnswer(event.thread, input.messageId, input.state.askTurnId);
@@ -179,11 +199,11 @@ export function waitForAskThread(
           }
         }),
       ),
-      Stream.takeUntil((event) => answerFound || event.type === "done"),
+      Stream.takeUntil((event) => turnComplete || event.type === "done"),
       Stream.runLast,
     );
     const event = Option.getOrUndefined(last);
-    if (!answerFound && event?.type !== "done") {
+    if (!turnComplete && event?.type !== "done") {
       return yield* Effect.fail(
         new ThreadSessionError({
           message: `thread wait ended without a terminal event: ${input.threadId}`,
@@ -312,7 +332,7 @@ function ensureNoPendingRequest(application: T3ApplicationService, threadId: str
   return application.showThread(threadId).pipe(
     Effect.flatMap((thread) => {
       if (!thread.hasPendingApprovals && !thread.hasPendingUserInput) {
-        return Effect.void;
+        return Effect.succeed(thread);
       }
       return Effect.fail(
         new AskThreadPendingRequestError({
