@@ -2,7 +2,9 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import type {
+  OrchestrationLatestTurn,
   OrchestrationMessage,
+  OrchestrationSession,
   OrchestrationThread,
   OrchestrationThreadShell,
 } from "@t3tools/contracts";
@@ -40,6 +42,7 @@ export type AskArchiveResult =
 export interface AskExecutionState {
   readonly archivePolicy: ArchivePolicy;
   threadId: string | undefined;
+  createdThread: boolean;
   dispatched: boolean;
   askTurnId: string | null;
   archiveResult: AskArchiveResult | undefined;
@@ -79,7 +82,9 @@ export function ensureAskTargetAvailable(thread: OrchestrationThreadShell) {
 export function waitForBusyThread(application: T3ApplicationService, threadId: string) {
   return application.watchThread(threadId).pipe(
     Stream.tap((event) =>
-      event.type === "status" ? ensureNoPendingRequest(application, threadId) : Effect.void,
+      event.type === "status"
+        ? application.showThread(threadId).pipe(Effect.flatMap(ensureNoPendingRequest))
+        : Effect.void,
     ),
     Stream.runLast,
     Effect.flatMap((last) => {
@@ -109,8 +114,50 @@ export function waitForAskThread(
 ) {
   let lastStatus = "";
   let askWindowOpen = false;
-  let answerFound = false;
+  let askMessageCreatedAt: string | null = null;
+  let askTurnObserved = false;
   let turnComplete = false;
+  const observeAskTurnLifecycle = (
+    session: OrchestrationSession | null,
+    latestTurn: OrchestrationLatestTurn | null,
+  ) => {
+    if (input.state.askTurnId === null && askWindowOpen) {
+      const requestedTurnId =
+        askMessageCreatedAt !== null && latestTurn?.requestedAt === askMessageCreatedAt
+          ? latestTurn.turnId
+          : null;
+      input.state.askTurnId = session?.activeTurnId ?? requestedTurnId;
+    }
+    const askTurnId = input.state.askTurnId;
+    if (askTurnId === null) {
+      return;
+    }
+    const askIsActive = session?.activeTurnId === askTurnId;
+    const askIsLatest = latestTurn?.turnId === askTurnId;
+    if (askIsActive || askIsLatest) {
+      askTurnObserved = true;
+    }
+    if (!askTurnObserved) {
+      return;
+    }
+    if (!askIsLatest) {
+      if (
+        askMessageCreatedAt !== null &&
+        latestTurn !== null &&
+        latestTurn.requestedAt > askMessageCreatedAt
+      ) {
+        turnComplete = true;
+      }
+      return;
+    }
+    if (latestTurn.state !== "running") {
+      turnComplete = true;
+      return;
+    }
+    if (!askIsActive && session?.status !== "starting" && session?.status !== "running") {
+      turnComplete = true;
+    }
+  };
   return Effect.gen(function* () {
     if (input.format === "human") {
       yield* output.writeStderr(`waiting for ${input.threadId}...\n`);
@@ -119,7 +166,8 @@ export function waitForAskThread(
       Stream.tap((event) =>
         Effect.gen(function* () {
           if (event.type === "status") {
-            const thread = yield* ensureNoPendingRequest(application, input.threadId);
+            const thread = yield* application.showThread(input.threadId);
+            observeAskTurnLifecycle(thread.session, thread.latestTurn);
             if (
               thread.session?.status === "error" &&
               input.state.askTurnId !== null &&
@@ -132,26 +180,16 @@ export function waitForAskThread(
                 }),
               );
             }
-            if (
-              answerFound &&
-              input.state.askTurnId !== null &&
-              thread.session?.activeTurnId !== input.state.askTurnId
-            ) {
-              turnComplete = true;
+            if (!turnComplete) {
+              yield* ensureNoPendingRequest(thread);
             }
           }
           if (event.type === "thread") {
-            const answer = selectAskAnswer(event.thread, input.messageId, input.state.askTurnId);
-            if (answer !== undefined) {
-              if (answer.turnId !== null) {
-                input.state.askTurnId = answer.turnId;
-              }
-              answerFound = true;
-            }
             const userIndex = event.thread.messages.findIndex(
               (message) => message.id === input.messageId && message.role === "user",
             );
             if (userIndex !== -1) {
+              askMessageCreatedAt = event.thread.messages[userIndex]?.createdAt ?? null;
               const following = event.thread.messages.slice(userIndex + 1);
               const nextUserIndex = following.findIndex((message) => message.role === "user");
               const askMessages =
@@ -161,14 +199,27 @@ export function waitForAskThread(
               )?.turnId;
               if (turnId !== undefined && turnId !== null) {
                 input.state.askTurnId = turnId;
+                askTurnObserved = true;
               }
               askWindowOpen = nextUserIndex === -1;
+              if (!askWindowOpen) {
+                turnComplete = true;
+              }
             }
+            const answer = selectAskAnswer(event.thread, input.messageId, input.state.askTurnId);
+            const answerTurnId = answer?.turnId;
+            if (answerTurnId !== undefined && answerTurnId !== null) {
+              input.state.askTurnId = answerTurnId;
+              askTurnObserved = true;
+            }
+            observeAskTurnLifecycle(event.thread.session, event.thread.latestTurn);
           } else if (event.type === "message") {
             if (event.message.id === input.messageId) {
               askWindowOpen = true;
+              askMessageCreatedAt = event.message.createdAt;
             } else if (askWindowOpen && event.message.role === "user") {
               askWindowOpen = false;
+              turnComplete = true;
             } else if (
               askWindowOpen &&
               event.message.role === "assistant" &&
@@ -179,14 +230,8 @@ export function waitForAskThread(
                 input.state.askTurnId === event.message.turnId
               ) {
                 input.state.askTurnId = event.message.turnId;
-                answerFound = !event.message.streaming && event.message.text.trim().length > 0;
+                askTurnObserved = true;
               }
-            } else if (
-              askWindowOpen &&
-              event.message.role === "assistant" &&
-              input.state.askTurnId === null
-            ) {
-              answerFound = !event.message.streaming && event.message.text.trim().length > 0;
             }
           }
           if (input.format === "ndjson") {
@@ -262,7 +307,11 @@ export function finalizeArchive(
     state.archivePolicy === "always" ||
     (state.archivePolicy === "on-success" && succeeded) ||
     (state.archivePolicy === "on-failure" && !succeeded);
-  if (!state.dispatched || state.threadId === undefined || !shouldArchive) {
+  if (
+    (!state.createdThread && !state.dispatched) ||
+    state.threadId === undefined ||
+    !shouldArchive
+  ) {
     const result = {
       policy: state.archivePolicy,
       status: "skipped",
@@ -304,12 +353,12 @@ export function cleanupInterruptedAsk(
   output: T3Output["Service"],
   state: AskExecutionState,
 ) {
-  if (!state.dispatched || state.threadId === undefined) {
+  if (state.threadId === undefined) {
     return Effect.void;
   }
   const threadId = state.threadId;
   return Effect.gen(function* () {
-    if (state.askTurnId !== null) {
+    if (state.dispatched && state.askTurnId !== null) {
       yield* application.interruptThreadTurn(threadId, state.askTurnId).pipe(
         Effect.matchEffect({
           onFailure: (error) =>
@@ -328,18 +377,18 @@ export function ensureTrailingNewline(text: string) {
   return text.endsWith("\n") ? text : `${text}\n`;
 }
 
-function ensureNoPendingRequest(application: T3ApplicationService, threadId: string) {
-  return application.showThread(threadId).pipe(
-    Effect.flatMap((thread) => {
-      if (!thread.hasPendingApprovals && !thread.hasPendingUserInput) {
-        return Effect.succeed(thread);
-      }
-      return Effect.fail(
-        new AskThreadPendingRequestError({
-          message: `thread requested approval or user input instead of answering: ${threadId}`,
-          threadId,
-        }),
-      );
+function ensureNoPendingRequest(thread: {
+  readonly id: string;
+  readonly hasPendingApprovals: boolean;
+  readonly hasPendingUserInput: boolean;
+}) {
+  if (!thread.hasPendingApprovals && !thread.hasPendingUserInput) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    new AskThreadPendingRequestError({
+      message: `thread requested approval or user input instead of answering: ${thread.id}`,
+      threadId: thread.id,
     }),
   );
 }

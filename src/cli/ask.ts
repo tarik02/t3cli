@@ -174,6 +174,7 @@ export const askCommand = Command.make(
       const state: AskExecutionState = {
         archivePolicy,
         threadId: explicitThreadId,
+        createdThread: false,
         dispatched: false,
         askTurnId: null,
         archiveResult: undefined,
@@ -205,9 +206,15 @@ export const askCommand = Command.make(
               ...(modelValue !== undefined ? { model: modelValue } : {}),
               ...(options.length > 0 ? { options } : {}),
             },
-            { until: "dispatch" },
+            {
+              until: "dispatch",
+              onThreadCreated: (threadId) =>
+                Effect.sync(() => {
+                  state.threadId = threadId;
+                  state.createdThread = true;
+                }),
+            },
           );
-          state.threadId = result.threadId;
           state.dispatched = true;
           dispatch = result.dispatch;
           askMessageId = result.messageId;

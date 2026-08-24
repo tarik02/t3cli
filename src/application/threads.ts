@@ -11,6 +11,8 @@ import {
   type ListThreadsInclude,
   type SnoozeThreadInput,
   type StartThreadInput,
+  type StartThreadPolicy,
+  type ThreadDispatchPolicy,
 } from "./service.ts";
 import type { CallbackThreadInput, SendThreadInput } from "./service.ts";
 import type { T3ThreadApplicationService } from "./service.ts";
@@ -252,9 +254,7 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
     );
   const startThread = Effect.fn("T3ApplicationLive.startThread")(function* (
     startInput: StartThreadInput,
-    policy?: {
-      readonly until: "dispatch" | "visible" | "complete";
-    },
+    policy?: StartThreadPolicy,
   ) {
     const snapshot = yield* orchestration.getShellSnapshot();
     const projectRef = startInput.projectRef;
@@ -284,10 +284,13 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
       project: scope.project,
       serverConfig,
     }).pipe(Effect.provideService(Crypto.Crypto, crypto));
+    const threadId = commands.threadId;
     const createDispatch = yield* orchestration.dispatch(commands.createCommand);
+    if (policy?.onThreadCreated !== undefined) {
+      yield* policy.onThreadCreated(threadId);
+    }
     yield* awaitShellSequence(createDispatch.sequence);
     const dispatch = yield* orchestration.dispatch(commands.turnCommand);
-    const threadId = commands.threadId;
     const messageId = commands.turnCommand.message.messageId;
     const until = policy?.until ?? "dispatch";
     if (until === "dispatch") {
@@ -309,9 +312,7 @@ export const makeThreadApplication = Effect.fn("makeThreadApplication")(function
   });
   const sendThread = Effect.fn("T3ApplicationLive.sendThread")(function* (
     input: SendThreadInput,
-    policy?: {
-      readonly until: "dispatch" | "visible" | "complete";
-    },
+    policy?: ThreadDispatchPolicy,
   ) {
     const modelSelection =
       input.options !== undefined && input.options.length > 0

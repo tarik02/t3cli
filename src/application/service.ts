@@ -86,9 +86,13 @@ export type UpdateThreadInput = {
   readonly worktreePath?: string | null;
 };
 
-export type StartThreadPolicy = {
+export interface ThreadDispatchPolicy {
   readonly until: "dispatch" | "visible" | "complete";
-};
+}
+
+export interface StartThreadPolicy extends ThreadDispatchPolicy {
+  readonly onThreadCreated?: (threadId: string) => Effect.Effect<void>;
+}
 
 export type WaitEvent =
   | { readonly type: "thread"; readonly thread: OrchestrationThread }
@@ -287,7 +291,7 @@ export type T3ThreadApplicationService = {
   >;
   readonly sendThread: (
     input: SendThreadInput,
-    policy?: StartThreadPolicy,
+    policy?: ThreadDispatchPolicy,
   ) => Effect.Effect<
     {
       readonly dispatch: DispatchResult;
