@@ -278,6 +278,7 @@ export type T3ThreadApplicationService = {
   ) => Effect.Effect<
     {
       readonly dispatch: DispatchResult;
+      readonly messageId: string;
       readonly project: OrchestrationProjectShell;
       readonly threadId: string;
       readonly thread?: OrchestrationThread;
@@ -290,6 +291,7 @@ export type T3ThreadApplicationService = {
   ) => Effect.Effect<
     {
       readonly dispatch: DispatchResult;
+      readonly messageId: string;
       readonly threadId: string;
       readonly thread?: OrchestrationThread;
     },

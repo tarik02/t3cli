@@ -105,9 +105,12 @@ export function waitForAskThread(
   input: {
     readonly threadId: string;
     readonly format: AskFormat;
+    readonly messageId: string;
+    readonly state: AskExecutionState;
   },
 ) {
   let lastStatus = "";
+  let askWindowOpen = false;
   return Effect.gen(function* () {
     if (input.format === "human") {
       yield* output.writeStderr(`waiting for ${input.threadId}...\n`);
@@ -117,6 +120,36 @@ export function waitForAskThread(
         Effect.gen(function* () {
           if (event.type === "status") {
             yield* ensureNoPendingRequest(application, input.threadId);
+          }
+          if (event.type === "thread") {
+            const userIndex = event.thread.messages.findIndex(
+              (message) => message.id === input.messageId && message.role === "user",
+            );
+            if (userIndex !== -1) {
+              const following = event.thread.messages.slice(userIndex + 1);
+              const nextUserIndex = following.findIndex((message) => message.role === "user");
+              const askMessages =
+                nextUserIndex === -1 ? following : following.slice(0, nextUserIndex);
+              const turnId = askMessages.findLast(
+                (message) => message.role === "assistant" && message.turnId !== null,
+              )?.turnId;
+              if (turnId !== undefined && turnId !== null) {
+                input.state.askTurnId = turnId;
+              }
+              askWindowOpen = nextUserIndex === -1;
+            }
+          } else if (event.type === "message") {
+            if (event.message.id === input.messageId) {
+              askWindowOpen = true;
+            } else if (askWindowOpen && event.message.role === "user") {
+              askWindowOpen = false;
+            } else if (
+              askWindowOpen &&
+              event.message.role === "assistant" &&
+              event.message.turnId !== null
+            ) {
+              input.state.askTurnId = event.message.turnId;
+            }
           }
           if (input.format === "ndjson") {
             yield* output.printNdjson(formatWaitEventNdjson(event));
@@ -155,23 +188,25 @@ export function announceQueue(output: T3Output["Service"], format: AskFormat, th
 
 export function selectAskAnswer(
   thread: OrchestrationThread,
-  baselineMessageIds: ReadonlySet<string>,
+  messageId: string,
+  turnId: string | null,
 ): OrchestrationMessage | undefined {
-  const newMessages = thread.messages.filter((message) => !baselineMessageIds.has(message.id));
-  const userIndex = newMessages.findLastIndex((message) => message.role === "user");
+  const userIndex = thread.messages.findIndex(
+    (message) => message.id === messageId && message.role === "user",
+  );
   if (userIndex === -1) {
     return undefined;
   }
-  const turnId = thread.latestTurn?.turnId;
-  const candidates = newMessages
-    .slice(userIndex + 1)
-    .filter(
-      (message) =>
-        message.role === "assistant" &&
-        !message.streaming &&
-        message.text.trim().length > 0 &&
-        (turnId === undefined || message.turnId === turnId),
-    );
+  const following = thread.messages.slice(userIndex + 1);
+  const nextUserIndex = following.findIndex((message) => message.role === "user");
+  const askMessages = nextUserIndex === -1 ? following : following.slice(0, nextUserIndex);
+  const candidates = askMessages.filter(
+    (message) =>
+      message.role === "assistant" &&
+      !message.streaming &&
+      message.text.trim().length > 0 &&
+      (turnId === null || message.turnId === turnId),
+  );
   return candidates.at(-1);
 }
 

@@ -187,8 +187,8 @@ export const askCommand = Command.make(
           fromStdin: stdin,
           readStdin: input.readStdin,
         });
-        let baselineMessageIds = new Set<string>();
         let dispatch: DispatchResult;
+        let askMessageId: string;
 
         if (explicitThreadId === undefined) {
           const projectRef = yield* requireCommandProjectRef({ project });
@@ -212,6 +212,7 @@ export const askCommand = Command.make(
           state.threadId = result.threadId;
           state.dispatched = true;
           dispatch = result.dispatch;
+          askMessageId = result.messageId;
         } else {
           let summary = yield* application.getThreadSummary(explicitThreadId);
           yield* ensureAskTargetAvailable(summary);
@@ -257,8 +258,6 @@ export const askCommand = Command.make(
             }
           }
 
-          const baseline = yield* application.getThreadMessages({ threadId: explicitThreadId });
-          baselineMessageIds = new Set(baseline.thread.messages.map((item) => item.id));
           state.baselineActiveTurnId = summary.session?.activeTurnId ?? null;
           const result = yield* application.sendThread(
             {
@@ -270,6 +269,7 @@ export const askCommand = Command.make(
           );
           state.dispatched = true;
           dispatch = result.dispatch;
+          askMessageId = result.messageId;
         }
 
         const threadId = state.threadId;
@@ -297,6 +297,8 @@ export const askCommand = Command.make(
         yield* waitForAskThread(application, output, {
           threadId,
           format: resolvedFormat,
+          messageId: askMessageId,
+          state,
         });
 
         const finalSnapshot = yield* application.getThreadMessages({ threadId });
@@ -308,7 +310,7 @@ export const askCommand = Command.make(
             }),
           );
         }
-        const answer = selectAskAnswer(finalSnapshot.thread, baselineMessageIds);
+        const answer = selectAskAnswer(finalSnapshot.thread, askMessageId, state.askTurnId);
         if (answer === undefined) {
           return yield* Effect.fail(
             new AskNoAnswerError({

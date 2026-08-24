@@ -129,7 +129,12 @@ export const startThreadCommand = Command.make(
 
       const result = yield* application.startThread(input, { until: "visible" });
       if (resolvedFormat === "json") {
-        yield* output.printJson(result);
+        yield* output.printJson({
+          dispatch: result.dispatch,
+          project: result.project,
+          threadId: result.threadId,
+          thread: result.thread,
+        });
       } else {
         yield* output.printInfo(
           formatThreadStartedHuman({
