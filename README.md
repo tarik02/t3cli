@@ -190,8 +190,7 @@ Without `--thread`, it creates a thread and archives it after a successful answe
 `--thread`, it leaves the existing thread active unless `--archive` is set explicitly.
 `--archive` accepts `never`, `always`, `on-success`, or `on-failure`.
 
-Existing busy threads fail by default. Use `--busy queue` to wait or `--busy steer` to send the
-question immediately. `--timeout 5m` limits the queue and response wait. Unlike other
+Existing busy threads are rejected. `--timeout 5m` limits the response wait. Unlike other
 thread-scoped commands, `ask` uses only an explicit `--thread` and ignores `T3CODE_THREAD_ID`.
 
 ### Starting Threads

@@ -103,7 +103,7 @@ t3cli ask [message]
   [--title <title>] [--worktree <path>] [--provider <name>] [--model <id>]
   [--option key=value] [--reasoning-effort <v>] [--effort <v>] [--fast-mode] [--thinking]
   [--archive never|always|on-success|on-failure]
-  [--busy fail|queue|steer] [--timeout <duration>]
+  [--timeout <duration>]
   [--format auto|human|json|ndjson]
 
 t3cli start [message]
@@ -128,15 +128,12 @@ t3cli wait [--thread <id>] [--format auto|human|ndjson]
 archive policy applies to either target. Archive failures produce a warning and remain visible in
 structured output without changing a successful exit status.
 
-`--busy fail` is the default for an active existing thread. `queue` waits for the active turn,
-while `steer` dispatches immediately. Busy checks are best effort because the server does not offer
-an atomic busy-policy condition. Existing archived threads and threads with pending approval or
-user-input requests are rejected.
+Existing busy or archived threads and threads with pending approval or user-input requests are
+rejected.
 
 `--timeout` accepts positive durations such as `30s`, `5m`, and `1h`; omitting it waits without a
 limit. A timeout or local interruption stops a turn started by `ask` when ownership can be
-confirmed, then applies the failure archive policy. Time spent waiting under `--busy queue` counts
-toward the timeout, but a timeout before dispatch does not mutate the existing turn.
+confirmed, then applies the failure archive policy.
 
 `--title`, `--worktree`, `--provider`, and `--model` apply only when creating a thread and are
 rejected with `--thread`. Model option flags apply to both modes. `ask` never reads

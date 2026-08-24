@@ -78,29 +78,6 @@ export function ensureAskTargetAvailable(thread: OrchestrationThreadShell) {
   return Effect.void;
 }
 
-export function waitForBusyThread(application: T3ApplicationService, threadId: string) {
-  return application.watchThread(threadId).pipe(
-    Stream.tap((event) =>
-      event.type === "status"
-        ? application.showThread(threadId).pipe(Effect.flatMap(ensureNoPendingRequest))
-        : Effect.void,
-    ),
-    Stream.runLast,
-    Effect.flatMap((last) => {
-      const event = Option.getOrUndefined(last);
-      if (event?.type === "done") {
-        return Effect.void;
-      }
-      return Effect.fail(
-        new ThreadSessionError({
-          message: `thread wait ended without a terminal event: ${threadId}`,
-          threadId,
-        }),
-      );
-    }),
-  );
-}
-
 export function waitForAskThread(
   application: T3ApplicationService,
   output: T3Output["Service"],
@@ -174,16 +151,6 @@ export function waitForAskThread(
   });
 }
 
-export function announceQueue(output: T3Output["Service"], format: AskFormat, threadId: string) {
-  if (format === "ndjson") {
-    return output.printNdjson({ type: "queue", status: "waiting", threadId });
-  }
-  if (format === "human") {
-    return output.writeStderr(`thread ${threadId} is busy; waiting to ask...\n`);
-  }
-  return Effect.void;
-}
-
 export function selectAskAnswer(
   thread: OrchestrationThread,
   messageId: string,
@@ -236,7 +203,7 @@ export function inspectAskTurn(
   const requestedTurnId =
     latestTurn?.requestedAt === userMessage.createdAt ? latestTurn.turnId : null;
   const turnId =
-    knownTurnId ?? messageTurnId ?? requestedTurnId ?? thread.session?.activeTurnId ?? null;
+    knownTurnId ?? requestedTurnId ?? messageTurnId ?? thread.session?.activeTurnId ?? null;
 
   if (turnId === null) {
     return {

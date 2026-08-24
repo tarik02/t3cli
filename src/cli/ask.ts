@@ -10,7 +10,6 @@ import { isThreadActive } from "../domain/thread-lifecycle.ts";
 import { ThreadSessionError } from "../domain/error.ts";
 import { loadT3CliEnv } from "../config/env/env.ts";
 import {
-  announceQueue,
   archivePolicyChoices,
   cleanupInterruptedAsk,
   ensureAskTargetAvailable,
@@ -20,7 +19,6 @@ import {
   resolveAskFormat,
   selectAskAnswer,
   waitForAskThread,
-  waitForBusyThread,
 } from "./ask-lifecycle.ts";
 import type { AskExecutionState } from "./ask-lifecycle.ts";
 import { extraArgsConfig } from "./extra-args.ts";
@@ -43,8 +41,6 @@ import { requireCommandProjectRef } from "./require.ts";
 import { resolveWorktreePath } from "./scope/index.ts";
 import { CliRuntime } from "./runtime/service.ts";
 
-const busyPolicyChoices = ["fail", "queue", "steer"] as const;
-
 interface AskResponse {
   readonly answer: string;
   readonly threadId: string;
@@ -65,13 +61,8 @@ const archivePolicyFlag = Flag.choice("archive", archivePolicyChoices).pipe(
   Flag.optional,
 );
 
-const busyPolicyFlag = Flag.choice("busy", busyPolicyChoices).pipe(
-  Flag.withDescription("Existing-thread busy policy (default: fail)"),
-  Flag.optional,
-);
-
 const timeoutFlag = Flag.string("timeout").pipe(
-  Flag.withDescription("Queue and response timeout, such as 30s, 5m, or 1h"),
+  Flag.withDescription("Response timeout, such as 30s, 5m, or 1h"),
   Flag.optional,
 );
 
@@ -93,7 +84,6 @@ export const askCommand = Command.make(
     model: Flag.string("model").pipe(Flag.optional),
     ...modelFlags,
     archive: archivePolicyFlag,
-    busy: busyPolicyFlag,
     timeout: timeoutFlag,
     format: askFormatFlag,
     ...extraArgsConfig,
@@ -114,14 +104,12 @@ export const askCommand = Command.make(
     fastMode,
     thinking,
     archive,
-    busy,
     timeout,
     format,
   }) =>
     Effect.gen(function* () {
       const explicitThreadId = Option.getOrUndefined(thread);
       const created = explicitThreadId === undefined;
-      const explicitBusyPolicy = Option.getOrUndefined(busy);
       const titleValue = Option.getOrUndefined(title);
       const providerValue = Option.getOrUndefined(provider);
       const modelValue = Option.getOrUndefined(model);
@@ -139,13 +127,6 @@ export const askCommand = Command.make(
           }),
         );
       }
-      if (created && explicitBusyPolicy !== undefined) {
-        return yield* Effect.fail(
-          new InvalidFlagCombinationError({
-            message: "--busy can only be used with --thread",
-          }),
-        );
-      }
       if (created && force) {
         return yield* Effect.fail(
           new InvalidFlagCombinationError({
@@ -158,7 +139,6 @@ export const askCommand = Command.make(
       const timeoutDuration =
         timeoutValue === undefined ? undefined : yield* parseAskTimeout(timeoutValue);
       const archivePolicy = Option.getOrElse(archive, () => (created ? "on-success" : "never"));
-      const busyPolicy = explicitBusyPolicy ?? "fail";
       const application = yield* T3Application;
       const cliRuntime = yield* CliRuntime;
       const t3CliEnv = yield* loadT3CliEnv;
@@ -220,7 +200,7 @@ export const askCommand = Command.make(
           dispatch = result.dispatch;
           askMessageId = result.messageId;
         } else {
-          let summary = yield* application.getThreadSummary(explicitThreadId);
+          const summary = yield* application.getThreadSummary(explicitThreadId);
           yield* ensureAskTargetAvailable(summary);
 
           const projectRef = Option.getOrUndefined(project);
@@ -245,28 +225,16 @@ export const askCommand = Command.make(
             action: "ask",
           });
 
-          let targetThread = (yield* application.getThreadMessages({ threadId: explicitThreadId }))
-            .thread;
+          const targetThread = (yield* application.getThreadMessages({
+            threadId: explicitThreadId,
+          })).thread;
           if (isThreadActive(targetThread)) {
-            if (busyPolicy === "fail") {
-              return yield* Effect.fail(
-                new AskThreadBusyError({
-                  message: `thread is busy: ${explicitThreadId}; use --busy queue or --busy steer`,
-                  threadId: explicitThreadId,
-                }),
-              );
-            }
-            if (busyPolicy === "queue") {
-              yield* announceQueue(output, resolvedFormat, explicitThreadId);
-              while (isThreadActive(targetThread)) {
-                yield* waitForBusyThread(application, explicitThreadId);
-                summary = yield* application.getThreadSummary(explicitThreadId);
-                yield* ensureAskTargetAvailable(summary);
-                targetThread = (yield* application.getThreadMessages({
-                  threadId: explicitThreadId,
-                })).thread;
-              }
-            }
+            return yield* Effect.fail(
+              new AskThreadBusyError({
+                message: `thread is busy: ${explicitThreadId}`,
+                threadId: explicitThreadId,
+              }),
+            );
           }
 
           const result = yield* application.sendThread(
